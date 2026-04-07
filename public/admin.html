@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gate Concierge — Admin Dashboard</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #1a1a2e; }
+    .header { background: linear-gradient(135deg, #1a1a2e, #16213e); color: white; padding: 20px 30px; display: flex; align-items: center; justify-content: space-between; }
+    .header h1 { font-size: 1.5rem; }
+    .header .subtitle { font-size: 0.85rem; opacity: 0.7; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+
+    /* Stats cards */
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .stat-card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .stat-card .label { font-size: 0.8rem; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-card .value { font-size: 2rem; font-weight: 700; margin-top: 4px; }
+    .stat-card.green .value { color: #27ae60; }
+    .stat-card.blue .value { color: #2980b9; }
+    .stat-card.orange .value { color: #f39c12; }
+    .stat-card.red .value { color: #e74c3c; }
+
+    /* Tabs */
+    .tabs { display: flex; gap: 0; margin-bottom: 0; background: white; border-radius: 12px 12px 0 0; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .tab { padding: 14px 24px; cursor: pointer; border: none; background: transparent; font-size: 0.9rem; font-weight: 500; color: #666; border-bottom: 3px solid transparent; }
+    .tab.active { color: #1a1a2e; border-bottom-color: #2980b9; background: #f8f9fa; }
+    .tab:hover { background: #f8f9fa; }
+
+    /* Panels */
+    .panel { background: white; border-radius: 0 0 12px 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); display: none; }
+    .panel.active { display: block; }
+
+    /* Tables */
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th { text-align: left; padding: 12px; background: #f8f9fa; color: #666; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px; }
+    td { padding: 12px; border-top: 1px solid #eee; }
+    tr:hover { background: #fafbfc; }
+
+    /* Status badges */
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+    .badge-pending { background: #fff3cd; color: #856404; }
+    .badge-arrived { background: #d4edda; color: #155724; }
+    .badge-expired { background: #e2e3e5; color: #383d41; }
+    .badge-cancelled { background: #f8d7da; color: #721c24; }
+    .badge-allow { background: #d4edda; color: #155724; }
+    .badge-deny { background: #f8d7da; color: #721c24; }
+    .badge-manual_check { background: #fff3cd; color: #856404; }
+    .badge-active { background: #d4edda; color: #155724; }
+    .badge-inactive { background: #e2e3e5; color: #383d41; }
+
+    /* Forms */
+    .form-row { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+    .form-group { flex: 1; min-width: 200px; }
+    .form-group label { display: block; font-size: 0.8rem; color: #666; margin-bottom: 4px; font-weight: 500; }
+    .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 0.9rem; }
+    .btn { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+    .btn-primary { background: #2980b9; color: white; }
+    .btn-primary:hover { background: #2471a3; }
+    .btn-danger { background: #e74c3c; color: white; }
+    .btn-danger:hover { background: #c0392b; }
+    .btn-sm { padding: 5px 12px; font-size: 0.8rem; }
+
+    /* Plate validator */
+    .validator-box { background: #f8f9fa; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+    .validator-result { margin-top: 16px; padding: 16px; border-radius: 8px; font-family: monospace; white-space: pre-line; }
+    .validator-result.allow { background: #d4edda; border: 2px solid #27ae60; }
+    .validator-result.deny { background: #f8d7da; border: 2px solid #e74c3c; }
+    .validator-result.manual_check { background: #fff3cd; border: 2px solid #f39c12; }
+
+    .empty-state { text-align: center; padding: 40px; color: #999; }
+    .refresh-btn { background: none; border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; }
+    .refresh-btn:hover { background: rgba(255,255,255,0.1); }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>🏢 Gate Concierge</h1>
+      <div class="subtitle">Admin Dashboard</div>
+    </div>
+    <button class="refresh-btn" onclick="loadAll()">↻ Refresh</button>
+  </div>
+
+  <div class="container">
+    <!-- Stats -->
+    <div class="stats" id="stats"></div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" data-tab="passes">Today's Visitors</button>
+      <button class="tab" data-tab="residents">Residents</button>
+      <button class="tab" data-tab="validate">Plate Validator</button>
+      <button class="tab" data-tab="events">Plate Events</button>
+      <button class="tab" data-tab="audit">Audit Logs</button>
+    </div>
+
+    <!-- Panels -->
+    <div class="panel active" id="panel-passes">
+      <div id="passes-table"></div>
+    </div>
+
+    <div class="panel" id="panel-residents">
+      <h3 style="margin-bottom:16px">Add Resident</h3>
+      <div class="form-row">
+        <div class="form-group"><label>Name</label><input id="r-name" placeholder="Ahmad Razak"></div>
+        <div class="form-group"><label>Unit Number</label><input id="r-unit" placeholder="A-10-01"></div>
+        <div class="form-group"><label>Phone Number</label><input id="r-phone" placeholder="60123456789"></div>
+        <div class="form-group" style="display:flex;align-items:flex-end"><button class="btn btn-primary" onclick="addResident()">Add Resident</button></div>
+      </div>
+      <div id="residents-table"></div>
+    </div>
+
+    <div class="panel" id="panel-validate">
+      <div class="validator-box">
+        <h3 style="margin-bottom:12px">🔍 Manual Plate Validator</h3>
+        <div class="form-row">
+          <div class="form-group"><label>Plate Number</label><input id="v-plate" placeholder="VEP1234"></div>
+          <div class="form-group" style="display:flex;align-items:flex-end"><button class="btn btn-primary" onclick="validatePlate()">Validate</button></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Or Upload Image</label><input type="file" id="v-image" accept="image/*"></div>
+          <div class="form-group" style="display:flex;align-items:flex-end"><button class="btn btn-primary" onclick="validateImage()">Validate Image</button></div>
+        </div>
+      </div>
+      <div id="validate-result"></div>
+    </div>
+
+    <div class="panel" id="panel-events">
+      <div id="events-table"></div>
+    </div>
+
+    <div class="panel" id="panel-audit">
+      <div id="audit-table"></div>
+    </div>
+  </div>
+
+  <script>
+    const API = '/api';
+
+    // Tab switching
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+      });
+    });
+
+    function badge(status) {
+      return `<span class="badge badge-${status.toLowerCase()}">${status}</span>`;
+    }
+
+    function formatTime(iso) {
+      if (!iso) return '—';
+      return new Date(iso).toLocaleString('en-MY', { dateStyle: 'short', timeStyle: 'short' });
+    }
+
+    // Load stats
+    async function loadStats() {
+      const res = await fetch(API + '/stats');
+      const s = await res.json();
+      document.getElementById('stats').innerHTML = `
+        <div class="stat-card blue"><div class="label">Total Residents</div><div class="value">${s.total_residents}</div></div>
+        <div class="stat-card green"><div class="label">Today's Passes</div><div class="value">${s.today_passes}</div></div>
+        <div class="stat-card orange"><div class="label">Pending Arrival</div><div class="value">${s.today_pending}</div></div>
+        <div class="stat-card green"><div class="label">Arrived Today</div><div class="value">${s.today_arrived}</div></div>
+        <div class="stat-card blue"><div class="label">Recent Plate Scans</div><div class="value">${s.recent_plate_events}</div></div>
+        <div class="stat-card red"><div class="label">Denied / Not Found</div><div class="value">${s.recent_denied}</div></div>
+      `;
+    }
+
+    // Load today's passes
+    async function loadPasses() {
+      const res = await fetch(API + '/passes/today');
+      const passes = await res.json();
+      if (passes.length === 0) {
+        document.getElementById('passes-table').innerHTML = '<div class="empty-state">No visitors registered for today.</div>';
+        return;
+      }
+      document.getElementById('passes-table').innerHTML = `<table>
+        <tr><th>Visitor</th><th>Plate</th><th>Unit</th><th>Expected</th><th>Valid Window</th><th>Status</th><th>Action</th></tr>
+        ${passes.map(p => `<tr>
+          <td>${p.visitor_name}</td>
+          <td><strong>${p.car_plate}</strong></td>
+          <td>${p.unit_number}</td>
+          <td>${formatTime(p.expected_arrival)}</td>
+          <td>${formatTime(p.validity_start)} – ${formatTime(p.validity_end)}</td>
+          <td>${badge(p.status)}</td>
+          <td>${p.status === 'pending' ? `<button class="btn btn-danger btn-sm" onclick="cancelPassAction('${p.id}')">Cancel</button>` : '—'}</td>
+        </tr>`).join('')}
+      </table>`;
+    }
+
+    // Load residents
+    async function loadResidents() {
+      const res = await fetch(API + '/residents');
+      const residents = await res.json();
+      document.getElementById('residents-table').innerHTML = `<table>
+        <tr><th>Name</th><th>Unit</th><th>Phone</th><th>Status</th><th>Action</th></tr>
+        ${residents.map(r => `<tr>
+          <td>${r.name}</td>
+          <td>${r.unit_number}</td>
+          <td>${r.phone_number}</td>
+          <td>${badge(r.status)}</td>
+          <td><button class="btn btn-sm ${r.status === 'active' ? 'btn-danger' : 'btn-primary'}" onclick="toggleResident('${r.id}', '${r.status === 'active' ? 'inactive' : 'active'}')">${r.status === 'active' ? 'Deactivate' : 'Activate'}</button></td>
+        </tr>`).join('')}
+      </table>`;
+    }
+
+    // Load plate events
+    async function loadEvents() {
+      const res = await fetch(API + '/plate-events');
+      const events = await res.json();
+      if (events.length === 0) {
+        document.getElementById('events-table').innerHTML = '<div class="empty-state">No plate events yet.</div>';
+        return;
+      }
+      document.getElementById('events-table').innerHTML = `<table>
+        <tr><th>Time</th><th>Detected</th><th>Normalized</th><th>Confidence</th><th>Result</th><th>Source</th></tr>
+        ${events.map(e => `<tr>
+          <td>${formatTime(e.created_at)}</td>
+          <td>${e.detected_plate}</td>
+          <td><strong>${e.normalized_plate}</strong></td>
+          <td>${Math.round(e.confidence * 100)}%</td>
+          <td>${badge(e.result)}</td>
+          <td>${e.source}</td>
+        </tr>`).join('')}
+      </table>`;
+    }
+
+    // Load audit logs
+    async function loadAudit() {
+      const res = await fetch(API + '/audit-logs');
+      const logs = await res.json();
+      if (logs.length === 0) {
+        document.getElementById('audit-table').innerHTML = '<div class="empty-state">No audit logs yet.</div>';
+        return;
+      }
+      document.getElementById('audit-table').innerHTML = `<table>
+        <tr><th>Time</th><th>Type</th><th>Action</th><th>Actor</th><th>Details</th></tr>
+        ${logs.map(l => `<tr>
+          <td>${formatTime(l.created_at)}</td>
+          <td>${l.entity_type}</td>
+          <td>${l.action}</td>
+          <td>${l.actor_phone || '—'}</td>
+          <td>${l.details || '—'}</td>
+        </tr>`).join('')}
+      </table>`;
+    }
+
+    // Actions
+    async function addResident() {
+      const name = document.getElementById('r-name').value;
+      const unit = document.getElementById('r-unit').value;
+      const phone = document.getElementById('r-phone').value;
+      if (!name || !unit || !phone) { alert('All fields required'); return; }
+      await fetch(API + '/residents', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({name, unit_number: unit, phone_number: phone}) });
+      document.getElementById('r-name').value = '';
+      document.getElementById('r-unit').value = '';
+      document.getElementById('r-phone').value = '';
+      loadResidents(); loadStats();
+    }
+
+    async function toggleResident(id, status) {
+      await fetch(API + '/residents/' + id, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({status}) });
+      loadResidents();
+    }
+
+    async function cancelPassAction(id) {
+      if (!confirm('Cancel this visitor pass?')) return;
+      await fetch(API + '/passes/' + id + '/cancel', { method: 'POST' });
+      loadPasses(); loadStats();
+    }
+
+    async function validatePlate() {
+      const plate = document.getElementById('v-plate').value;
+      if (!plate) return;
+      const res = await fetch(API + '/validate-plate', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({plate}) });
+      const data = await res.json();
+      showValidationResult(data);
+    }
+
+    async function validateImage() {
+      const file = document.getElementById('v-image').files[0];
+      if (!file) return;
+      const form = new FormData();
+      form.append('image', file);
+      const res = await fetch(API + '/validate-plate', { method: 'POST', body: form });
+      const data = await res.json();
+      showValidationResult(data);
+    }
+
+    function showValidationResult(data) {
+      const el = document.getElementById('validate-result');
+      if (!data.success && !data.result) {
+        el.innerHTML = `<div class="validator-result deny">${data.message || data.error}</div>`;
+        return;
+      }
+      const cls = data.result === 'ALLOW' ? 'allow' : data.result === 'DENY' ? 'deny' : 'manual_check';
+      el.innerHTML = `<div class="validator-result ${cls}">${data.message}</div>`;
+      loadEvents(); loadPasses(); loadStats();
+    }
+
+    function loadAll() { loadStats(); loadPasses(); loadResidents(); loadEvents(); loadAudit(); }
+    loadAll();
+
+    // Auto-refresh every 30 seconds
+    setInterval(loadAll, 30000);
+  </script>
+</body>
+</html>

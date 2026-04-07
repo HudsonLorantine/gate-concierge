@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  gate-concierge:
+    build: .
+    container_name: gate-concierge
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - DATABASE_PATH=/app/data/gate-concierge.db
+    volumes:
+      - concierge-data:/app/data
+      - concierge-uploads:/app/uploads
+      - concierge-logs:/app/logs
+
+volumes:
+  concierge-data:
+    driver: local
+  concierge-uploads:
+    driver: local
+  concierge-logs:
+    driver: local
