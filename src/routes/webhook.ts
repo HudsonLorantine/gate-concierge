@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { handleTextMessage, handleImageMessage } from '../services/conversation';
+import { handleTextMessage, handleImageMessage, MessageContext } from '../services/conversation';
 import { sendWhatsAppMessage } from '../services/openclaw';
 import { logger } from '../utils/logger';
 import { config } from '../config';
@@ -42,18 +42,31 @@ router.post('/webhook', async (req: Request, res: Response) => {
 
     for (const message of messages) {
       const from = message.from;
-      let reply: string;
+
+      // Build message context (detect group vs DM)
+      const chatId = message.chat_id || message.from;
+      const isGroup = !!(message.is_group || message.chat_id && message.chat_id !== message.from);
+      const context: MessageContext = {
+        senderPhone: from,
+        chatId,
+        isGroup,
+        groupName: message.group_name,
+      };
+
+      let reply: string | null;
 
       if (message.type === 'text' && message.text?.body) {
-        reply = await handleTextMessage(from, message.text.body);
+        reply = await handleTextMessage(from, message.text.body, context);
       } else if (message.type === 'image' && message.image?.id) {
         reply = await handleImageMessage(from, message.image.id, message.image.caption);
       } else {
         reply = 'I can only process text messages and vehicle photos right now. Type *help* for commands.';
       }
 
-      // Send reply
-      await sendWhatsAppMessage(from, reply);
+      // Only send reply if not null (null = ignored group message)
+      if (reply) {
+        await sendWhatsAppMessage(from, reply);
+      }
     }
   } catch (error) {
     logger.error('Webhook processing error', { error });

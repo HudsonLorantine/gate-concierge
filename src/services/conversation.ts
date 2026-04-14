@@ -11,38 +11,70 @@ import { config } from '../config';
 import path from 'path';
 import fs from 'fs';
 
+export interface MessageContext {
+  senderPhone: string;
+  chatId?: string;
+  isGroup?: boolean;
+  groupName?: string;
+}
+
 // In-memory conversation sessions (sufficient for MVP)
 const sessions = new Map<string, ConversationSession>();
 
 const SESSION_TIMEOUT = 10 * 60 * 1000; // 10 minutes
 
-function getSession(phone: string): ConversationSession {
-  let session = sessions.get(phone);
+const GROUP_TRIGGER_REGEX = /^(?:luna\b|\/)/i;
+
+function getSessionKey(phone: string, context?: MessageContext): string {
+  if (context?.isGroup && context.chatId) {
+    return `${context.chatId}:${phone}`;
+  }
+  return phone;
+}
+
+function getSession(phone: string, context?: MessageContext): ConversationSession {
+  const key = getSessionKey(phone, context);
+  let session = sessions.get(key);
   if (!session || Date.now() - session.updated_at > SESSION_TIMEOUT) {
-    session = { phone, state: 'idle', data: {}, updated_at: Date.now() };
-    sessions.set(phone, session);
+    session = { phone: key, state: 'idle', data: {}, updated_at: Date.now() };
+    sessions.set(key, session);
   }
   return session;
 }
 
-function updateSession(phone: string, state: ConversationState, data?: Record<string, string>): void {
-  const session = getSession(phone);
+function updateSession(phone: string, state: ConversationState, data?: Record<string, string>, context?: MessageContext): void {
+  const session = getSession(phone, context);
   session.state = state;
   if (data) session.data = { ...session.data, ...data };
   session.updated_at = Date.now();
-  sessions.set(phone, session);
+  sessions.set(getSessionKey(phone, context), session);
 }
 
-function clearSession(phone: string): void {
-  sessions.set(phone, { phone, state: 'idle', data: {}, updated_at: Date.now() });
+function clearSession(phone: string, context?: MessageContext): void {
+  const key = getSessionKey(phone, context);
+  sessions.set(key, { phone: key, state: 'idle', data: {}, updated_at: Date.now() });
 }
 
 /**
  * Main handler for incoming WhatsApp text messages.
+ * Returns null for group messages that should be ignored (no trigger, no active session).
  */
-export async function handleTextMessage(from: string, text: string): Promise<string> {
-  const session = getSession(from);
-  const input = text.trim();
+export async function handleTextMessage(from: string, text: string, context: MessageContext = { senderPhone: from }): Promise<string | null> {
+  const session = getSession(from, context);
+  const isGroup = !!context.isGroup;
+  let input = text.trim();
+
+  // In groups: require trigger only when idle, strip it when present
+  if (isGroup) {
+    const shouldRequireTrigger = session.state === 'idle';
+    if (shouldRequireTrigger && !GROUP_TRIGGER_REGEX.test(input)) {
+      return null;
+    }
+    if (GROUP_TRIGGER_REGEX.test(input)) {
+      input = input.replace(/^luna\b[:,\s-]*/i, '').replace(/^\//, '').trim();
+    }
+  }
+
   const inputLower = input.toLowerCase();
 
   // Check authorization
@@ -54,12 +86,12 @@ export async function handleTextMessage(from: string, text: string): Promise<str
 
   // Global commands (available from any state)
   if (inputLower === 'help' || inputLower === 'menu') {
-    clearSession(from);
+    clearSession(from, context);
     return formatHelp();
   }
 
   if (inputLower === 'cancel' && session.state !== 'idle') {
-    clearSession(from);
+    clearSession(from, context);
     return '❎ Action cancelled. Type *help* for commands.';
   }
 
@@ -87,7 +119,7 @@ export async function handleTextMessage(from: string, text: string): Promise<str
       return handleCancelSelect(from, input, resident);
 
     default:
-      clearSession(from);
+      clearSession(from, context);
       return 'Something went wrong. Type *help* for available commands.';
   }
 }
