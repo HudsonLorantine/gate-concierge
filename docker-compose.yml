@@ -6,16 +6,28 @@ services:
     container_name: gate-concierge
     restart: unless-stopped
     ports:
-      - "${PORT:-3000}:3000"
+      # Host port is configurable via GATE_CONCIERGE_PORT or PORT in .env.
+      # Container always listens on 3000 internally.
+      - "${GATE_CONCIERGE_PORT:-${PORT:-3000}}:3000"
     env_file:
       - .env
     environment:
       - NODE_ENV=production
+      - PORT=3000
+      - DATA_DIR=/app/data
       - DATABASE_PATH=/app/data/gate-concierge.db
+      - WA_AUTH_DIR=/app/data/wa-auth
     volumes:
+      # Persists: SQLite DB + WhatsApp pairing state (wa-auth/)
       - concierge-data:/app/data
       - concierge-uploads:/app/uploads
       - concierge-logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
 
 volumes:
   concierge-data:

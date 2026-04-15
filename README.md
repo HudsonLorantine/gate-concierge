@@ -18,8 +18,13 @@ Residents pre-register visitors. Guards validate arriving vehicles by plate numb
                     └──────────────────┘
 ```
 
-**Current:** Standalone backend service with REST API + admin dashboard.
-**Next:** OpenClaw/WhatsApp integration, camera ANPR, gate automation.
+**Architecture:** Self-contained Node.js service. Talks to WhatsApp directly
+via [Baileys](https://github.com/WhiskeySockets/Baileys) (the WhatsApp Web
+multi-device protocol) — no Meta Cloud API account, no OpenClaw middleman, no
+third-party gateway. On first run it prints a QR code that you scan once from
+your phone to pair the bot, the same way the WhatsApp Web browser tab works.
+
+**Next:** Camera ANPR feed, gate relay automation.
 
 ---
 
@@ -51,6 +56,81 @@ docker exec gate-concierge node -e "
   stmt.run(v4(), 'Raj Kumar', 'C-05-08', '60171234567');
   console.log('Seeded.');
 "
+```
+
+---
+
+## Pairing the Bot with WhatsApp (first run)
+
+The bot uses the **WhatsApp Web multi-device protocol** — same as linking
+WhatsApp to a laptop browser. You pair it once, and the credentials are
+persisted to the `concierge-data` Docker volume so it survives restarts.
+
+### Step 1 — start the container
+
+```bash
+docker compose up -d --build
+```
+
+### Step 2 — get the pairing QR
+
+Pick whichever is easier:
+
+**Option A — from container logs (ASCII QR)**
+
+```bash
+docker compose logs -f gate-concierge | grep -A 40 "pairing required"
+```
+
+You'll see an ASCII QR code in the logs. Scan it with your phone camera.
+
+**Option B — from the admin dashboard (PNG QR)**
+
+Open `http://<your-host>:<port>/admin` and go to the **WhatsApp** panel.
+The QR refreshes automatically every few seconds until you pair.
+
+**Option C — raw PNG endpoint**
+
+```bash
+curl -u admin:changeme http://localhost:3000/api/whatsapp/qr.png -o qr.png
+open qr.png  # or xdg-open / display / etc.
+```
+
+### Step 3 — scan from your phone
+
+On the phone that will be the bot:
+
+1. Open **WhatsApp**
+2. Settings → **Linked Devices** → **Link a Device**
+3. Point the camera at the QR code
+4. Wait ~3 seconds — the container logs will show `WhatsApp connected as <your-number>`
+
+### Step 4 — verify
+
+```bash
+curl -u admin:changeme http://localhost:3000/api/whatsapp/status
+# { "state": "open", "pairedNumber": "60123456789", ... }
+
+curl http://localhost:3000/health
+# { "status":"ok", "whatsapp":{ "state":"open", ... } }
+```
+
+Send yourself a message (self-chat) or DM the bot's number from another phone:
+
+- **`help`** — list commands
+- **`register`** — start a new visitor registration flow
+- **`today`** — list today's passes
+
+In group chats, prefix commands with `luna ` (or `/`), e.g.:
+`luna register ABC1234 John tonight 7pm`
+
+### Re-pairing
+
+If the phone logs out, is lost, or you want to switch numbers:
+
+```bash
+curl -u admin:changeme -X POST http://localhost:3000/api/whatsapp/logout
+# Wipes saved credentials and emits a fresh QR for re-pairing
 ```
 
 ---

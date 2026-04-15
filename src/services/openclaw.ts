@@ -1,56 +1,31 @@
-import { config } from '../config';
-import { logger } from '../utils/logger';
+/**
+ * Backward-compat facade.
+ *
+ * The project used to send WhatsApp messages via an OpenClaw HTTP bridge.
+ * That indirection has been removed — we now talk to WhatsApp directly via
+ * Baileys. This file keeps the old function names (`sendWhatsAppMessage`,
+ * `downloadMedia`) so `conversation.ts` and `routes/webhook.ts` don't need
+ * to change. Both delegate to the real implementation in ./whatsapp.
+ */
+
+import { sendText, downloadStashedMedia } from './whatsapp';
 
 /**
- * Send a WhatsApp message via OpenClaw API.
+ * Send a WhatsApp text message to a phone number or JID.
+ * Kept for API compatibility with the old OpenClaw-backed implementation.
  */
 export async function sendWhatsAppMessage(to: string, text: string): Promise<void> {
-  const url = `${config.openclaw.apiUrl}/messages`;
-
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.openclaw.apiKey}`,
-      },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to,
-        type: 'text',
-        text: { body: text },
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      logger.error(`OpenClaw send failed: ${response.status} ${err}`);
-      throw new Error(`Failed to send message: ${response.status}`);
-    }
-
-    logger.debug(`Message sent to ${to}: ${text.substring(0, 50)}...`);
-  } catch (error) {
-    logger.error('Failed to send WhatsApp message', { error, to });
-    throw error;
-  }
+  return sendText(to, text);
 }
 
 /**
- * Download media from OpenClaw (for image messages).
+ * Fetch image bytes for a previously received message.
+ *
+ * Under the old OpenClaw integration, `mediaId` was a Cloud API media ID.
+ * Under Baileys it's an internal stash key handed out by whatsapp.ts at the
+ * moment the inbound image arrives — the lookup semantics are identical from
+ * the caller's perspective.
  */
 export async function downloadMedia(mediaId: string): Promise<Buffer> {
-  const url = `${config.openclaw.apiUrl}/media/${mediaId}`;
-
-  const response = await fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${config.openclaw.apiKey}`,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to download media: ${response.status}`);
-  }
-
-  const arrayBuffer = await response.arrayBuffer();
-  return Buffer.from(arrayBuffer);
+  return downloadStashedMedia(mediaId);
 }

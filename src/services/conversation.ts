@@ -98,25 +98,25 @@ export async function handleTextMessage(from: string, text: string, context: Mes
   // Handle based on current state
   switch (session.state) {
     case 'idle':
-      return handleIdleState(from, input, inputLower, resident);
+      return handleIdleState(from, input, inputLower, resident, context);
 
     case 'register_name':
-      return handleRegisterName(from, input, resident);
+      return handleRegisterName(from, input, resident, context);
 
     case 'register_plate':
-      return handleRegisterPlate(from, input, resident);
+      return handleRegisterPlate(from, input, resident, context);
 
     case 'register_datetime':
-      return handleRegisterDatetime(from, input, resident);
+      return handleRegisterDatetime(from, input, resident, context);
 
     case 'register_notes':
-      return handleRegisterNotes(from, input, resident);
+      return handleRegisterNotes(from, input, resident, context);
 
     case 'register_confirm':
-      return handleRegisterConfirm(from, input, resident);
+      return handleRegisterConfirm(from, input, resident, context);
 
     case 'cancel_select':
-      return handleCancelSelect(from, input, resident);
+      return handleCancelSelect(from, input, resident, context);
 
     default:
       clearSession(from, context);
@@ -166,17 +166,17 @@ export async function handleImageMessage(from: string, mediaId: string, caption?
 
 // ─── State handlers ──────────────────────────────────────────
 
-async function handleIdleState(from: string, input: string, inputLower: string, resident: any): Promise<string> {
+async function handleIdleState(from: string, input: string, inputLower: string, resident: any, context?: MessageContext): Promise<string> {
   // Try natural language parsing first
   const naturalParse = tryParseNaturalRegistration(input);
   if (naturalParse) {
-    updateSession(from, 'register_confirm', naturalParse);
+    updateSession(from, 'register_confirm', naturalParse, context);
     return formatConfirmation(naturalParse, resident);
   }
 
   // Command-based flow
   if (inputLower === 'register' || inputLower === 'add' || inputLower === 'new') {
-    updateSession(from, 'register_name');
+    updateSession(from, 'register_name', undefined, context);
     return '📝 *Register New Visitor*\n\nWhat is your visitor\'s name?';
   }
 
@@ -218,7 +218,7 @@ async function handleIdleState(from: string, input: string, inputLower: string, 
       msg += `${i + 1}. ${p.visitor_name} — ${p.car_plate}\n`;
     });
     msg += '\nReply with the number, or type *cancel* to go back.';
-    updateSession(from, 'cancel_select', { passes: JSON.stringify(passes.map(p => p.id)) });
+    updateSession(from, 'cancel_select', { passes: JSON.stringify(passes.map(p => p.id)) }, context);
     return msg;
   }
 
@@ -226,44 +226,44 @@ async function handleIdleState(from: string, input: string, inputLower: string, 
   return `👋 Hi ${resident.name}!\n\nWelcome to Gate Concierge.\n\n${formatHelp()}`;
 }
 
-async function handleRegisterName(from: string, input: string, resident: any): Promise<string> {
+async function handleRegisterName(from: string, input: string, _resident: any, context?: MessageContext): Promise<string> {
   if (input.length < 2) {
     return 'Please enter a valid visitor name.';
   }
-  updateSession(from, 'register_plate', { visitor_name: input });
+  updateSession(from, 'register_plate', { visitor_name: input }, context);
   return `Got it — *${input}*\n\nWhat is their car plate number?`;
 }
 
-async function handleRegisterPlate(from: string, input: string, resident: any): Promise<string> {
+async function handleRegisterPlate(from: string, input: string, _resident: any, context?: MessageContext): Promise<string> {
   const plate = normalizePlate(input);
   if (!isValidPlateFormat(plate)) {
     return `"${input}" doesn't look like a valid plate number.\n\nPlease enter a plate like: VEP1234, W1234X, ABC123`;
   }
-  updateSession(from, 'register_datetime', { car_plate: plate });
+  updateSession(from, 'register_datetime', { car_plate: plate }, context);
   return `Plate: *${plate}*\n\nWhen are they expected to arrive?\n\nExamples:\n• tonight 7pm\n• 2pm\n• 7 Apr 8pm\n• tomorrow 10am`;
 }
 
-async function handleRegisterDatetime(from: string, input: string, resident: any): Promise<string> {
+async function handleRegisterDatetime(from: string, input: string, _resident: any, context?: MessageContext): Promise<string> {
   const parsed = parseDateTime(input);
   if (!parsed) {
     return 'I couldn\'t understand that time. Please try again.\n\nExamples: "7pm", "tonight 8pm", "tomorrow 3pm", "7 Apr 7pm"';
   }
-  updateSession(from, 'register_notes', { expected_arrival: parsed.toISOString() });
+  updateSession(from, 'register_notes', { expected_arrival: parsed.toISOString() }, context);
   const formatted = parsed.toLocaleString('en-MY', { dateStyle: 'medium', timeStyle: 'short' });
   return `Arrival: *${formatted}*\n\nAny notes? (or type *skip*)`;
 }
 
-async function handleRegisterNotes(from: string, input: string, resident: any): Promise<string> {
+async function handleRegisterNotes(from: string, input: string, resident: any, context?: MessageContext): Promise<string> {
   const notes = input.toLowerCase() === 'skip' ? '' : input;
-  updateSession(from, 'register_confirm', { notes });
-  const session = getSession(from);
+  updateSession(from, 'register_confirm', { notes }, context);
+  const session = getSession(from, context);
   return formatConfirmation(session.data, resident);
 }
 
-async function handleRegisterConfirm(from: string, input: string, resident: any): Promise<string> {
+async function handleRegisterConfirm(from: string, input: string, resident: any, context?: MessageContext): Promise<string> {
   const inputLower = input.toLowerCase();
   if (inputLower === 'yes' || inputLower === 'y' || inputLower === 'confirm' || inputLower === 'ok') {
-    const session = getSession(from);
+    const session = getSession(from, context);
     const pass = createVisitorPass({
       residentId: resident.id,
       residentPhone: from,
@@ -280,20 +280,20 @@ async function handleRegisterConfirm(from: string, input: string, resident: any)
     const validStart = new Date(pass.validity_start).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: true });
     const validEnd = new Date(pass.validity_end).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit', hour12: true });
 
-    clearSession(from);
+    clearSession(from, context);
     return `✅ *Visitor Registered!*\n\n👤 Guest: ${pass.visitor_name}\n🚗 Plate: ${pass.car_plate}\n📅 Arrival: ${arrival}\n⏰ Valid: ${validStart} – ${validEnd}\n🏠 Unit: ${pass.unit_number}${pass.notes ? `\n📝 Notes: ${pass.notes}` : ''}`;
   }
 
   if (inputLower === 'no' || inputLower === 'n') {
-    clearSession(from);
+    clearSession(from, context);
     return '❎ Registration cancelled. Type *register* to start again.';
   }
 
   return 'Please reply *yes* to confirm or *no* to cancel.';
 }
 
-async function handleCancelSelect(from: string, input: string, resident: any): Promise<string> {
-  const session = getSession(from);
+async function handleCancelSelect(from: string, input: string, _resident: any, context?: MessageContext): Promise<string> {
+  const session = getSession(from, context);
   const passIds: string[] = JSON.parse(session.data.passes || '[]');
   const index = parseInt(input, 10) - 1;
 
@@ -304,11 +304,11 @@ async function handleCancelSelect(from: string, input: string, resident: any): P
   const pass = cancelPass(passIds[index]);
   if (pass) {
     createAuditLog('visitor_pass', pass.id, 'cancelled', from, `Cancelled by resident`);
-    clearSession(from);
+    clearSession(from, context);
     return `✅ Cancelled pass for *${pass.visitor_name}* (${pass.car_plate}).`;
   }
 
-  clearSession(from);
+  clearSession(from, context);
   return '⚠️ Could not cancel that pass. It may have already been used or expired.';
 }
 

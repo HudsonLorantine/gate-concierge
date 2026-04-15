@@ -72,6 +72,21 @@
     .empty-state { text-align: center; padding: 40px; color: #999; }
     .refresh-btn { background: none; border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; }
     .refresh-btn:hover { background: rgba(255,255,255,0.1); }
+
+    /* WhatsApp panel */
+    .wa-status { display: flex; align-items: center; gap: 14px; padding: 16px 20px; background: #f8f9fa; border-radius: 12px; margin-bottom: 20px; }
+    .wa-dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
+    .wa-dot.open { background: #27ae60; box-shadow: 0 0 0 4px rgba(39,174,96,0.18); }
+    .wa-dot.qr { background: #f39c12; box-shadow: 0 0 0 4px rgba(243,156,18,0.18); animation: pulse 1.4s infinite; }
+    .wa-dot.connecting { background: #2980b9; animation: pulse 1.4s infinite; }
+    .wa-dot.disconnected { background: #e74c3c; }
+    @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.45 } }
+    .wa-state-text { font-weight: 600; font-size: 1rem; }
+    .wa-sub { color: #666; font-size: 0.85rem; margin-top: 2px; }
+    .wa-qr-wrap { text-align: center; padding: 24px; background: white; border: 2px dashed #ddd; border-radius: 12px; }
+    .wa-qr-wrap img { max-width: 280px; width: 100%; height: auto; }
+    .wa-qr-hint { margin-top: 12px; color: #666; font-size: 0.85rem; line-height: 1.5; }
+    .wa-connected-box { padding: 20px; background: #d4edda; border: 1px solid #27ae60; border-radius: 12px; color: #155724; }
   </style>
 </head>
 <body>
@@ -94,6 +109,7 @@
       <button class="tab" data-tab="validate">Plate Validator</button>
       <button class="tab" data-tab="events">Plate Events</button>
       <button class="tab" data-tab="audit">Audit Logs</button>
+      <button class="tab" data-tab="whatsapp">WhatsApp</button>
     </div>
 
     <!-- Panels -->
@@ -133,6 +149,18 @@
 
     <div class="panel" id="panel-audit">
       <div id="audit-table"></div>
+    </div>
+
+    <div class="panel" id="panel-whatsapp">
+      <div class="wa-status">
+        <div class="wa-dot disconnected" id="wa-dot"></div>
+        <div style="flex:1">
+          <div class="wa-state-text" id="wa-state-text">Loading…</div>
+          <div class="wa-sub" id="wa-sub">&nbsp;</div>
+        </div>
+        <button class="btn btn-danger btn-sm" id="wa-logout-btn" onclick="logoutWhatsApp()" style="display:none">Logout / Re-pair</button>
+      </div>
+      <div id="wa-body"></div>
     </div>
   </div>
 
@@ -304,7 +332,89 @@
       loadEvents(); loadPasses(); loadStats();
     }
 
-    function loadAll() { loadStats(); loadPasses(); loadResidents(); loadEvents(); loadAudit(); }
+    // ─── WhatsApp pairing panel ─────────────────────────────
+    async function loadWhatsApp() {
+      try {
+        const res = await fetch(API + '/whatsapp/status');
+        if (!res.ok) throw new Error('status ' + res.status);
+        const s = await res.json();
+
+        const dot = document.getElementById('wa-dot');
+        const stateText = document.getElementById('wa-state-text');
+        const sub = document.getElementById('wa-sub');
+        const body = document.getElementById('wa-body');
+        const logoutBtn = document.getElementById('wa-logout-btn');
+
+        dot.className = 'wa-dot ' + s.state;
+
+        if (s.state === 'open') {
+          stateText.textContent = '✅ Connected';
+          sub.textContent = s.pairedNumber ? ('Paired number: +' + s.pairedNumber) : 'Paired';
+          logoutBtn.style.display = 'inline-block';
+          body.innerHTML = `
+            <div class="wa-connected-box">
+              <strong>WhatsApp is live.</strong> Residents can message the bot's number directly,
+              or mention <code>luna</code> in group chats where the bot is a member.
+              <br><br>
+              <em>Connected since ${s.connectedAt ? new Date(s.connectedAt).toLocaleString() : '—'}</em>
+            </div>`;
+        } else if (s.state === 'qr' && s.hasQr) {
+          stateText.textContent = '📱 Scan QR to pair';
+          sub.textContent = 'Waiting for a phone to link…';
+          logoutBtn.style.display = 'none';
+          // Use a cache-busting query to force refresh each poll
+          body.innerHTML = `
+            <div class="wa-qr-wrap">
+              <img src="${API}/whatsapp/qr.png?t=${Date.now()}" alt="WhatsApp QR">
+              <div class="wa-qr-hint">
+                On your phone: <strong>WhatsApp → Settings → Linked Devices → Link a Device</strong><br>
+                Point the camera at this QR code. Page refreshes every 5 seconds.
+              </div>
+            </div>`;
+        } else if (s.state === 'connecting') {
+          stateText.textContent = '⏳ Connecting to WhatsApp…';
+          sub.textContent = 'Establishing socket';
+          logoutBtn.style.display = 'none';
+          body.innerHTML = '<div class="empty-state">Please wait…</div>';
+        } else {
+          stateText.textContent = '⚠️ Disconnected';
+          sub.textContent = s.lastError ? ('Last error: ' + s.lastError) : 'Not connected';
+          logoutBtn.style.display = 'none';
+          body.innerHTML = '<div class="empty-state">The bot is not currently connected. It will reconnect automatically, or click <em>Logout / Re-pair</em> below if stuck.</div>';
+          document.getElementById('wa-logout-btn').style.display = 'inline-block';
+        }
+      } catch (err) {
+        document.getElementById('wa-state-text').textContent = '⚠️ Could not reach backend';
+        document.getElementById('wa-sub').textContent = String(err);
+      }
+    }
+
+    async function logoutWhatsApp() {
+      if (!confirm('Log out the bot and emit a fresh pairing QR? Any current session will be dropped.')) return;
+      await fetch(API + '/whatsapp/logout', { method: 'POST' });
+      setTimeout(loadWhatsApp, 1500);
+    }
+
+    // Poll WhatsApp status every 5s while on the panel
+    let waPollTimer = null;
+    function startWhatsAppPolling() {
+      if (waPollTimer) return;
+      loadWhatsApp();
+      waPollTimer = setInterval(loadWhatsApp, 5000);
+    }
+    function stopWhatsAppPolling() {
+      if (waPollTimer) { clearInterval(waPollTimer); waPollTimer = null; }
+    }
+
+    // Wire up tab switch to start/stop polling
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        if (tab.dataset.tab === 'whatsapp') startWhatsAppPolling();
+        else stopWhatsAppPolling();
+      });
+    });
+
+    function loadAll() { loadStats(); loadPasses(); loadResidents(); loadEvents(); loadAudit(); loadWhatsApp(); }
     loadAll();
 
     // Auto-refresh every 30 seconds

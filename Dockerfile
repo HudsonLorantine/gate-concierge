@@ -2,7 +2,16 @@ FROM node:20-slim AS builder
 
 WORKDIR /app
 
-# Install build dependencies
+# Build tools for any native npm deps (better-sqlite3, libsignal, etc.)
+# Only present in the builder stage; the final image stays slim.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    make \
+    g++ \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install all dependencies (including devDeps for tsc)
 COPY package.json package-lock.json* ./
 RUN npm install && npm cache clean --force
 
