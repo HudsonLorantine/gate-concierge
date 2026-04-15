@@ -28,7 +28,7 @@ router.get('/residents', (_req: Request, res: Response) => {
 });
 
 router.get('/residents/:id', (req: Request, res: Response) => {
-  const resident = findResidentById(req.params.id);
+  const resident = findResidentById(String(req.params.id));
   if (!resident) {
     res.status(404).json({ error: 'Resident not found' });
     return;
@@ -51,7 +51,7 @@ router.post('/residents', (req: Request, res: Response) => {
 });
 
 router.put('/residents/:id', (req: Request, res: Response) => {
-  const resident = updateResident(req.params.id, req.body);
+  const resident = updateResident(String(req.params.id), req.body);
   if (!resident) {
     res.status(404).json({ error: 'Resident not found' });
     return;
@@ -72,7 +72,7 @@ router.get('/passes/recent', (req: Request, res: Response) => {
 });
 
 router.get('/passes/:id', (req: Request, res: Response) => {
-  const pass = getPassById(req.params.id);
+  const pass = getPassById(String(req.params.id));
   if (!pass) {
     res.status(404).json({ error: 'Pass not found' });
     return;
@@ -116,7 +116,7 @@ router.post('/passes', (req: Request, res: Response) => {
 });
 
 router.post('/passes/:id/cancel', (req: Request, res: Response) => {
-  const pass = cancelPass(req.params.id);
+  const pass = cancelPass(String(req.params.id));
   if (!pass) {
     res.status(404).json({ error: 'Pass not found or already processed' });
     return;

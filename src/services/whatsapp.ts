@@ -36,6 +36,7 @@ let lastError: string | null = null;
 let connectedAt: number | null = null;
 let pairedNumber: string | null = null;
 let reconnectAttempts = 0;
+let isShuttingDown = false; // set by stopWhatsApp() to suppress reconnect loop
 
 // Lazy-load conversation handlers to avoid circular import at module init.
 // (conversation.ts imports from this file indirectly via openclaw.ts facade.)
@@ -147,6 +148,10 @@ export async function startWhatsApp(): Promise<void> {
     return;
   }
 
+  // Reset shutdown flag so a start after stop (e.g. from logoutAndRepair)
+  // doesn't get suppressed by a stale guard.
+  isShuttingDown = false;
+
   // Ensure auth dir exists.
   if (!fs.existsSync(config.whatsapp.authDir)) {
     fs.mkdirSync(config.whatsapp.authDir, { recursive: true });
@@ -208,6 +213,13 @@ export async function startWhatsApp(): Promise<void> {
       connectionState = 'disconnected';
       connectedAt = null;
 
+      // If we're tearing down the process, do nothing — don't wipe auth,
+      // don't schedule a reconnect, let the event loop drain.
+      if (isShuttingDown) {
+        logger.debug('WhatsApp socket closed during shutdown');
+        return;
+      }
+
       if (loggedOut) {
         logger.warn('WhatsApp logged out — clearing auth state, next start will require re-pairing');
         try {
@@ -240,10 +252,20 @@ export async function startWhatsApp(): Promise<void> {
   });
 }
 
+/**
+ * Graceful shutdown. Closes the socket WITHOUT sending a logout frame —
+ * pairing credentials stay intact on disk so the next boot reconnects
+ * silently without a new QR scan.
+ *
+ * If you actually want to un-pair (wipe credentials, force re-scan), use
+ * logoutAndRepair() instead.
+ */
 export async function stopWhatsApp(): Promise<void> {
   if (!sock) return;
+  isShuttingDown = true;
   try {
-    await sock.logout();
+    // end() closes the underlying websocket cleanly; no logout message sent.
+    sock.end(undefined);
   } catch {
     // ignore — we're stopping anyway
   }
