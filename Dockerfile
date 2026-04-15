@@ -43,7 +43,8 @@ ENV DATABASE_PATH=/app/data/gate-concierge.db
 
 EXPOSE 3000
 
+# Healthcheck honors GATE_CONCIERGE_PORT, then PORT, then defaults to 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD curl -f http://localhost:3000/health || exit 1
+  CMD curl -fsS "http://localhost:${GATE_CONCIERGE_PORT:-${PORT:-3000}}/health" || exit 1
 
 CMD ["node", "dist/index.js"]
